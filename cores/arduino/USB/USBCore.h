@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2014 Arduino.  All right reserved.
+  Copyright (c) 2014 Arduino LLC.  All right reserved.
 
   This library is free software; you can redistribute it and/or
   modify it under the terms of the GNU Lesser General Public
@@ -31,6 +31,18 @@
 #define GET_INTERFACE				10
 #define SET_INTERFACE				11
 
+// bEndpointAddress in Endpoint Descriptor
+#define USB_ENDPOINT_DIRECTION_MASK            0x80
+#define USB_ENDPOINT_OUT(addr)                 ((addr) | 0x00)
+#define USB_ENDPOINT_IN(addr)                  ((addr) | 0x80)
+
+#define USB_ENDPOINTS                          7
+
+#define USB_ENDPOINT_TYPE_MASK                 0x03
+#define USB_ENDPOINT_TYPE_CONTROL              0x00
+#define USB_ENDPOINT_TYPE_ISOCHRONOUS          0x01
+#define USB_ENDPOINT_TYPE_BULK                 0x02
+#define USB_ENDPOINT_TYPE_INTERRUPT            0x03
 
 // bmRequestType
 #define REQUEST_HOSTTODEVICE		0x00
@@ -48,24 +60,18 @@
 #define REQUEST_OTHER				0x03
 #define REQUEST_RECIPIENT			0x1F
 
-#define REQUEST_DEVICETOHOST_CLASS_INTERFACE  (REQUEST_DEVICETOHOST + REQUEST_CLASS + REQUEST_INTERFACE)
-#define REQUEST_HOSTTODEVICE_CLASS_INTERFACE  (REQUEST_HOSTTODEVICE + REQUEST_CLASS + REQUEST_INTERFACE)
-
+#define REQUEST_DEVICETOHOST_CLASS_INTERFACE    (REQUEST_DEVICETOHOST | REQUEST_CLASS | REQUEST_INTERFACE)
+#define REQUEST_HOSTTODEVICE_CLASS_INTERFACE    (REQUEST_HOSTTODEVICE | REQUEST_CLASS | REQUEST_INTERFACE)
+#define REQUEST_DEVICETOHOST_STANDARD_INTERFACE (REQUEST_DEVICETOHOST | REQUEST_STANDARD | REQUEST_INTERFACE)
 //	Class requests
 
 #define CDC_SET_LINE_CODING			0x20
 #define CDC_GET_LINE_CODING			0x21
 #define CDC_SET_CONTROL_LINE_STATE	0x22
+#define CDC_SEND_BREAK				0x23
 
 #define MSC_RESET					0xFF
 #define MSC_GET_MAX_LUN				0xFE
-
-#define HID_GET_REPORT				0x01
-#define HID_GET_IDLE				0x02
-#define HID_GET_PROTOCOL			0x03
-#define HID_SET_REPORT				0x09
-#define HID_SET_IDLE				0x0A
-#define HID_SET_PROTOCOL			0x0B
 
 //	Descriptors
 
@@ -94,6 +100,9 @@
 
 // bMaxPower in Configuration Descriptor
 #define USB_CONFIG_POWER_MA(mA)                ((mA)/2)
+#ifndef USB_CONFIG_POWER
+ #define USB_CONFIG_POWER                      (500)
+#endif
 
 #define CDC_V1_10                               0x0110
 #define CDC_COMMUNICATION_INTERFACE_CLASS       0x02
@@ -109,10 +118,6 @@
 
 #define MSC_SUBCLASS_SCSI						0x06
 #define MSC_PROTOCOL_BULK_ONLY					0x50
-
-#define HID_HID_DESCRIPTOR_TYPE					0x21
-#define HID_REPORT_DESCRIPTOR_TYPE				0x22
-#define HID_PHYSICAL_DESCRIPTOR_TYPE			0x23
 
 _Pragma("pack(1)")
 
@@ -224,10 +229,8 @@ typedef struct
 
 typedef struct
 {
-#if (defined CDC_ENABLED) && defined(HID_ENABLED)
 	//	IAD
 	IADDescriptor				iad;	// Only needed on compound device
-#endif
 	//	Control
 	InterfaceDescriptor			cif;
 	CDCCSInterfaceDescriptor	header;
@@ -249,36 +252,16 @@ typedef struct
 	EndpointDescriptor			out;
 } MSCDescriptor;
 
-typedef struct
-{
-	uint8_t len;			// 9
-	uint8_t dtype;			// 0x21
-	uint8_t addr;
-	uint8_t	versionL;		// 0x101
-	uint8_t	versionH;		// 0x101
-	uint8_t	country;
-	uint8_t	desctype;		// 0x22 report
-	uint8_t	descLenL;
-	uint8_t	descLenH;
-} HIDDescDescriptor;
-
-typedef struct
-{
-	InterfaceDescriptor		hid;
-	HIDDescDescriptor		desc;
-	EndpointDescriptor		in;
-} HIDDescriptor;
-
 _Pragma("pack()")
 
 #define D_DEVICE(_class,_subClass,_proto,_packetSize0,_vid,_pid,_version,_im,_ip,_is,_configs) \
-	{ 18, 1, 0x110, _class,_subClass,_proto,_packetSize0,_vid,_pid,_version,_im,_ip,_is,_configs }
+	{ 18, 1, 0x200, _class,_subClass,_proto,_packetSize0,_vid,_pid,_version,_im,_ip,_is,_configs }
 /* Table 9-8. Standard Device Descriptor
  * bLength, bDescriptorType, bcdUSB, bDeviceClass, bDeviceSubClass, bDeviceProtocol, bMaxPacketSize0,
  *    idVendor, idProduct, bcdDevice, iManufacturer, iProduct, iSerialNumber, bNumConfigurations */
 
 #define D_CONFIG(_totalLength,_interfaces) \
-	{ 9, 2, _totalLength,_interfaces, 1, 0, USB_CONFIG_SELF_POWERED, USB_CONFIG_POWER_MA(500) }
+	{ 9, 2, _totalLength,_interfaces, 1, 0, USB_CONFIG_BUS_POWERED | USB_CONFIG_REMOTE_WAKEUP, USB_CONFIG_POWER_MA(USB_CONFIG_POWER) }
 /* Table 9-10. Standard Configuration Descriptor
  * bLength, bDescriptorType, wTotalLength, bNumInterfaces, bConfigurationValue, iConfiguration
  * bmAttributes, bMaxPower */
@@ -296,12 +279,8 @@ _Pragma("pack()")
 
 #define D_IAD(_firstInterface, _count, _class, _subClass, _protocol) \
 	{ 8, 11, _firstInterface, _count, _class, _subClass, _protocol, 0 }
-/* iadclasscode_r10.pdf, Table 9–Z. Standard Interface Association Descriptor
+/* iadclasscode_r10.pdf, Table 9\96Z. Standard Interface Association Descriptor
  * bLength, bDescriptorType, bFirstInterface, bInterfaceCount, bFunctionClass, bFunctionSubClass, bFunctionProtocol, iFunction */
-#define D_HIDREPORT(_descriptorLength) \
-	{ 9, 0x21, 0x1, 0x1, 0, 1, 0x22, _descriptorLength, 0 }
-/* HID1_11.pdf  E.8 HID Descriptor (Mouse)
- * bLength, bDescriptorType, bcdHID, bCountryCode, bNumDescriptors, bDescriptorType, wItemLength */
 
 // Functional Descriptor General Format
 #define D_CDCCS(_subtype,_d0,_d1)	{ 5, 0x24, _subtype, _d0, _d1 }

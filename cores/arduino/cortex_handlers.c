@@ -16,8 +16,9 @@
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-#include "sam.h"
-#include "variant.h"
+#include <sam.h>
+#include <variant.h>
+#include <stdio.h>
 
 /* RTOS Hooks */
 extern void svcHook(void);
@@ -25,7 +26,6 @@ extern void pendSVHook(void);
 extern int sysTickHook(void);
 
 /* Default empty handler */
-
 void Dummy_Handler(void)
 {
 #if defined DEBUG
@@ -36,7 +36,7 @@ void Dummy_Handler(void)
 
 /* Cortex-M0+ core handlers */
 void HardFault_Handler(void) __attribute__ ((weak, alias("Dummy_Handler")));
-void Reest_Handler    (void);
+void Reset_Handler    (void);
 void NMI_Handler      (void) __attribute__ ((weak, alias("Dummy_Handler")));
 void SVC_Handler      (void) __attribute__ ((weak, alias("Dummy_Handler")));
 void PendSV_Handler   (void) __attribute__ ((weak, alias("Dummy_Handler")));
@@ -50,7 +50,7 @@ void RTC_Handler      (void) __attribute__ ((weak, alias("Dummy_Handler")));
 void EIC_Handler      (void) __attribute__ ((weak, alias("Dummy_Handler")));
 void NVMCTRL_Handler  (void) __attribute__ ((weak, alias("Dummy_Handler")));
 void DMAC_Handler     (void) __attribute__ ((weak, alias("Dummy_Handler")));
-void USB_Handler      (void) __attribute__ ((weak, alias("Dummy_Handler")));
+void USB_Handler      (void) __attribute__ ((weak));
 void EVSYS_Handler    (void) __attribute__ ((weak, alias("Dummy_Handler")));
 void SERCOM0_Handler  (void) __attribute__ ((weak, alias("Dummy_Handler")));
 void SERCOM1_Handler  (void) __attribute__ ((weak, alias("Dummy_Handler")));
@@ -130,11 +130,11 @@ __attribute__ ((section(".isr_vector"))) const DeviceVectors exception_table =
   (void*) AC_Handler,             /* 24 Analog Comparators */
   (void*) DAC_Handler,            /* 25 Digital Analog Converter */
   (void*) PTC_Handler,            /* 26 Peripheral Touch Controller */
-  (void*) I2S_Handler             /* 27 Inter-IC Sound Interface */
+  (void*) I2S_Handler,            /* 27 Inter-IC Sound Interface */
+  (void*) (0UL),                  /* Reserved */
 };
 
 extern int main(void);
-extern void __libc_init_array(void);
 
 /* This is called on processor reset to initialize the device and call main() */
 void Reset_Handler(void)
@@ -156,9 +156,6 @@ void Reset_Handler(void)
       *pDest = 0;
   }
 
-  /* Initialize the C library */
-  __libc_init_array();
-
   SystemInit();
 
   main();
@@ -175,4 +172,17 @@ void SysTick_Handler(void)
   if (sysTickHook())
     return;
   SysTick_DefaultHandler();
+}
+
+static void (*usb_isr)(void) = NULL;
+
+void USB_Handler(void)
+{
+  if (usb_isr)
+    usb_isr();
+}
+
+void USB_SetHandler(void (*new_usb_isr)(void))
+{
+  usb_isr = new_usb_isr;
 }
